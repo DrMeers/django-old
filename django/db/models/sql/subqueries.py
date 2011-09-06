@@ -138,6 +138,7 @@ class InsertQuery(Query):
         super(InsertQuery, self).__init__(*args, **kwargs)
         self.fields = []
         self.objs = []
+        self.raw = False
 
     def clone(self, klass=None, **kwargs):
         extras = {

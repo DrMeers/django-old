@@ -4,7 +4,7 @@ from operator import attrgetter
 
 from django.test import TestCase, skipUnlessDBFeature
 
-from models import Country, Restaurant, Pizzeria, State
+from .models import Country, Restaurant, Pizzeria, State
 
 
 class BulkCreateTests(TestCase):
@@ -19,7 +19,8 @@ class BulkCreateTests(TestCase):
     def test_simple(self):
         Country.objects.bulk_create(self.data)
         self.assertQuerysetEqual(Country.objects.order_by("-name"), [
-            "United States of America", "The Netherlands", "Germany", "Czech Republic"
+            "United States of America", "The Netherlands", "Germany",
+            "Czech Republic"
         ], attrgetter("name"))
 
     @skipUnlessDBFeature("has_bulk_insert")

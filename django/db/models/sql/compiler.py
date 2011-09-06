@@ -805,16 +805,24 @@ class SQLInsertCompiler(SQLCompiler):
         if has_fields:
             params = values = [
                 [
-                    f.get_db_prep_save(getattr(obj, f.attname) if self.query.raw else f.pre_save(obj, True), connection=self.connection)
+                    f.get_db_prep_save(
+                        getattr(obj, f.attname) if self.query.raw else
+                        f.pre_save(obj, True), connection=self.connection)
                     for f in fields
                 ]
                 for obj in self.query.objs
             ]
         else:
-            values = [[self.connection.ops.pk_default_value()] for obj in self.query.objs]
+            values = [
+                [self.connection.ops.pk_default_value()]
+                for obj in self.query.objs
+            ]
             params = [[]]
             fields = [None]
-        can_bulk = not any(hasattr(field, "get_placeholder") for field in fields) and not self.return_id
+
+        can_bulk = (
+            not any(hasattr(field, "get_placeholder") for field in fields) and
+            not self.return_id)
 
         if can_bulk:
             placeholders = [["%s"] * len(fields)]
@@ -823,17 +831,21 @@ class SQLInsertCompiler(SQLCompiler):
                 [self.placeholder(field, v) for field, v in izip(fields, val)]
                 for val in values
             ]
-        if self.return_id and self.connection.features.can_return_id_from_insert:
-            params = values[0]
+        if self.return_id and \
+                self.connection.features.can_return_id_from_insert:
+            (params,) = values
+            (placeholders,) = placeholders
             col = "%s.%s" % (qn(opts.db_table), qn(opts.pk.column))
-            result.append("VALUES (%s)" % ", ".join(placeholders[0]))
+            result.append("VALUES (%s)" % ", ".join(placeholders))
             r_fmt, r_params = self.connection.ops.return_insert_id()
             result.append(r_fmt % col)
             params += r_params
             return [(" ".join(result), tuple(params))]
         if can_bulk and self.connection.features.has_bulk_insert:
-            result.append(self.connection.ops.bulk_insert_sql(fields, len(values)))
-            return [(" ".join(result), tuple([v for val in values for v in val]))]
+            result.append(
+                self.connection.ops.bulk_insert_sql(fields, len(values)))
+            return [
+                (" ".join(result), tuple([v for val in values for v in val]))]
         else:
             return [
                 (" ".join(result + ["VALUES (%s)" % ", ".join(p)]), vals)
@@ -850,8 +862,9 @@ class SQLInsertCompiler(SQLCompiler):
             return
         if self.connection.features.can_return_id_from_insert:
             return self.connection.ops.fetch_returned_insert_id(cursor)
-        return self.connection.ops.last_insert_id(cursor,
-                self.query.model._meta.db_table, self.query.model._meta.pk.column)
+        return self.connection.ops.last_insert_id(
+            cursor, self.query.model._meta.db_table,
+            self.query.model._meta.pk.column)
 
 
 class SQLDeleteCompiler(SQLCompiler):

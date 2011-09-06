@@ -374,17 +374,23 @@ class QuerySet(object):
             return
         self._for_write = True
         connection = connections[self.db]
+        features = connection.features
         fields = self.model._meta.local_fields
-        if (connection.features.can_combine_inserts_with_and_without_auto_increment_pk
+        if (features.can_combine_inserts_with_and_without_auto_increment_pk
             and self.model._meta.has_auto_field):
-            self.model._base_manager._insert(objs, fields=fields, using=self.db)
+            self.model._base_manager._insert(
+                objs, fields=fields, using=self.db)
         else:
-            objs_with_pk = [o for o in objs if o.pk]
-            objs_without_pk = [o for o in objs if not o.pk]
+            objs_with_pk = [o for o in objs if o.pk is not None]
+            objs_without_pk = [o for o in objs if o.pk is None]
             if objs_with_pk:
-                self.model._base_manager._insert(objs_with_pk, fields=fields, using=self.db)
+                self.model._base_manager._insert(
+                    objs_with_pk, fields=fields, using=self.db)
             if objs_without_pk:
-                self.model._base_manager._insert(objs_without_pk, fields=[f for f in fields if not isinstance(f, AutoField)], using=self.db)
+                self.model._base_manager._insert(
+                    objs_without_pk,
+                    fields=[f for f in fields if not isinstance(f, AutoField)],
+                    using=self.db)
 
     def get_or_create(self, **kwargs):
         """
