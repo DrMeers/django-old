@@ -157,13 +157,20 @@ class Query(object):
     def __str__(self):
         """
         Returns the query as a string of SQL with the parameter values
-        substituted in.
+        substituted in (use sql_with_params() to see the unsubstituted string).
 
         Parameter values won't necessarily be quoted correctly, since that is
         done by the database interface at execution time.
         """
-        sql, params = self.get_compiler(DEFAULT_DB_ALIAS).as_sql()
+        sql, params = self.sql_with_params()
         return sql % params
+
+    def sql_with_params(self):
+        """
+        Returns the query as an SQL string and the parameters that will be
+        subsituted into the query.
+        """
+        return self.get_compiler(DEFAULT_DB_ALIAS).as_sql()
 
     def __deepcopy__(self, memo):
         result = self.clone(memo=memo)
@@ -1099,7 +1106,10 @@ class Query(object):
 
         # Process the join list to see if we can remove any inner joins from
         # the far end (fewer tables in a query is better).
-        col, alias, join_list = self.trim_joins(target, join_list, last, trim)
+        nonnull_comparison = (lookup_type == 'isnull' and value is False)
+        col, alias, join_list = self.trim_joins(target, join_list, last, trim,
+                nonnull_comparison)
+
         if connector == OR:
             # Some joins may need to be promoted when adding a new filter to a
             # disjunction. We walk the list of new joins and where it diverges
@@ -1436,7 +1446,7 @@ class Query(object):
 
         return field, target, opts, joins, last, extra_filters
 
-    def trim_joins(self, target, join_list, last, trim):
+    def trim_joins(self, target, join_list, last, trim, nonnull_check=False):
         """
         Sometimes joins at the end of a multi-table sequence can be trimmed. If
         the final join is against the same column as we are comparing against,
@@ -1457,6 +1467,11 @@ class Query(object):
         trimmed before anything. See the documentation of add_filter() for
         details about this.
 
+        The 'nonnull_check' parameter is True when we are using inner joins
+        between tables explicitly to exclude NULL entries. In that case, the
+        tables shouldn't be trimmed, because the very action of joining to them
+        alters the result set.
+
         Returns the final active column and table alias and the new active
         join_list.
         """
@@ -1464,7 +1479,7 @@ class Query(object):
         penultimate = last.pop()
         if penultimate == final:
             penultimate = last.pop()
-        if trim and len(join_list) > 1:
+        if trim and final > 1:
             extra = join_list[penultimate:]
             join_list = join_list[:penultimate]
             final = penultimate
@@ -1477,12 +1492,13 @@ class Query(object):
         alias = join_list[-1]
         while final > 1:
             join = self.alias_map[alias]
-            if col != join[RHS_JOIN_COL] or join[JOIN_TYPE] != self.INNER:
+            if (col != join[RHS_JOIN_COL] or join[JOIN_TYPE] != self.INNER or
+                    nonnull_check):
                 break
             self.unref_alias(alias)
             alias = join[LHS_ALIAS]
             col = join[LHS_JOIN_COL]
-            join_list = join_list[:-1]
+            join_list.pop()
             final -= 1
             if final == penultimate:
                 penultimate = last.pop()
@@ -1776,13 +1792,18 @@ class Query(object):
         existing immediate values, but respects existing deferrals.)
         """
         existing, defer = self.deferred_loading
+        field_names = set(field_names)
+        if 'pk' in field_names:
+            field_names.remove('pk')
+            field_names.add(self.model._meta.pk.name)
+
         if defer:
             # Remove any existing deferred names from the current set before
             # setting the new names.
-            self.deferred_loading = set(field_names).difference(existing), False
+            self.deferred_loading = field_names.difference(existing), False
         else:
             # Replace any existing "immediate load" field names.
-            self.deferred_loading = set(field_names), False
+            self.deferred_loading = field_names, False
 
     def get_loaded_field_names(self):
         """
